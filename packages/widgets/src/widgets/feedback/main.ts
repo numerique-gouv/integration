@@ -5,6 +5,7 @@ import { listenEvent, triggerEvent } from "../../shared/events";
 import { trapFocus, trapEscape } from "../../shared/focus";
 
 const widgetName = "feedback";
+const defaultAttachmentMaxSizeMb = 5;
 
 type ConfigData = {
   title?: string;
@@ -14,6 +15,9 @@ type ConfigData = {
   successText?: string;
   successText2?: string;
   closeLabel?: string;
+  attachmentLabel?: string;
+  attachmentError?: string;
+  attachmentMaxSizeMb?: number;
   submitUrl?: string;
 };
 
@@ -32,6 +36,9 @@ type FeedbackWidgetArgs = {
   successText?: string;
   successText2?: string;
   closeLabel?: string;
+  attachmentLabel?: string;
+  attachmentError?: string;
+  attachmentMaxSizeMb?: number;
   submitUrl?: string;
   api: string;
   channel: string;
@@ -70,6 +77,12 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
   const successText = args.successText || configData?.successText || "Thank you for your feedback!";
   const successText2 = args.successText2 || configData?.successText2 || "";
   const closeLabel = args.closeLabel || configData?.closeLabel || "Close the feedback widget";
+  const attachmentMaxSizeMb = args.attachmentMaxSizeMb || configData?.attachmentMaxSizeMb || defaultAttachmentMaxSizeMb;
+  const maxFileSize = attachmentMaxSizeMb * 1024 * 1024;
+  const attachmentLabel =
+    args.attachmentLabel || configData?.attachmentLabel || `Attachment (max ${attachmentMaxSizeMb}MB)`;
+  const attachmentError =
+    args.attachmentError || configData?.attachmentError || `Attachment exceeds ${attachmentMaxSizeMb}MB`;
 
   /* prettier-ignore */
   const htmlContent =
@@ -82,6 +95,7 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
         `<form>` +
           `<textarea id="feedback-text" autocomplete="off" required></textarea>` +
           `<input type="email" id="email" autocomplete="email" required>` +
+          `<label for="file" id="file-label"></label>` +
           `<input type="file" id="file">` +
           `<button type="submit" id="submit"></button>` +
         `</form>` +
@@ -107,6 +121,7 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
   const errorDiv = $<HTMLDivElement>("#error")!;
   const closeBtn = $<HTMLButtonElement>("#close")!;
   const emailInput = $<HTMLInputElement>("#email")!;
+  const fileLabel = $<HTMLLabelElement>("#file-label")!;
   const form = $<HTMLFormElement>("form")!;
   const successDiv = $<HTMLDivElement>("#success")!;
   const successTextP = $<HTMLParagraphElement>("#success-text")!;
@@ -120,11 +135,20 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
   emailInput.placeholder = emailPlaceholder;
   submitBtn.textContent = submitText;
   closeBtn.setAttribute("aria-label", closeLabel);
+  fileLabel.textContent = attachmentLabel;
 
   if (args.email) {
     emailInput.remove();
   }
 
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (file && file.size > maxFileSize) {
+      fileInput.value = "";
+      errorDiv.style.display = "block";
+      errorDiv.textContent = "⚠ " + attachmentError;
+    }
+  });
 
   function fileToBase64(file: File | Blob): Promise<string> {
     return new Promise<string>((resolve, reject) => {
@@ -145,12 +169,15 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
     const email = args.email || emailInput.value.trim();
     const file = fileInput.files?.[0];
     const attachments = file
-      ? [{
-          type: file.type || "application/octet-stream",
-          name: file.name,
-          disposition: "attachment",
-          content: await fileToBase64(file),
-        }] : [];
+      ? [
+          {
+            type: file.type || "application/octet-stream",
+            name: file.name,
+            disposition: "attachment",
+            content: await fileToBase64(file),
+          },
+        ]
+      : [];
 
     try {
       if (!message) {
@@ -168,7 +195,7 @@ listenEvent(widgetName, "init", null, false, async (args: FeedbackWidgetArgs) =>
           "Content-Type": "application/json",
           "X-Channel-ID": args.channel,
         },
-        body: JSON.stringify({ textBody: message, attachments : attachments, email }),
+        body: JSON.stringify({ textBody: message, attachments: attachments, email }),
       });
       let retData;
       try {

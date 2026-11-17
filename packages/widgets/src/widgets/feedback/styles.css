@@ -74,6 +74,16 @@ form {
   resize: none;
 }
 
+#file-label {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+#file {
+  font-family: inherit;
+  font-size: 14px;
+}
+
 #submit {
   background: #000091;
   color: white;
